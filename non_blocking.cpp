@@ -1,4 +1,6 @@
+#include "WS_Frame/frame.h"
 #include <cerrno>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -21,6 +23,9 @@ using namespace std;
 #define MAGIC_WEBSOCKET_UUID_STRING "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 #define WS_ENDPOINT "/websocket"
 #define MAX_WS_CLIENTS 10
+#define WS_BUF_SIZE 4096
+
+uint8_t ws_buf[WS_BUF_SIZE];
 
 typedef struct {
   int fd;
@@ -260,8 +265,9 @@ void handle_client(Client *c, char server_buf[], char response_buf[],
 }
 
 void handle_websocket_client(Client *ws_c, Client clients[],
-                             Client websocket_clients[]) {
-  printf("handling websocket client with fd %d \n", ws_c->fd);
+                             Client websocket_clients[], char server_buf[]) {
+  int recv_status = ::recv(ws_c->fd, server_buf, BUF_SIZE - 1, 0);
+  WS_Frame frame = WS_Frame();
 }
 
 int main() {
@@ -309,7 +315,14 @@ int main() {
       Client *c = &clients[i];
       if (c->fd != -1) {
         FD_SET(c->fd, &read_sockets);
-        max_fd = c->fd;
+        max_fd = max(max_fd, c->fd);
+      }
+    }
+    for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+      Client *ws_c = &websocket_clients[i];
+      if (ws_c->fd != -1) {
+        FD_SET(ws_c->fd, &read_sockets);
+        max_fd = max(max_fd, ws_c->fd);
       }
     }
     int sel = ::select(max_fd + 1, &read_sockets, &write_sockets, (fd_set *)0,
@@ -319,8 +332,8 @@ int main() {
 
     for (int i = 0; i < MAX_WS_CLIENTS; i++) {
       Client *ws_c = &websocket_clients[i];
-      if (ws_c->fd != -1) {
-        handle_websocket_client(ws_c, clients, websocket_clients);
+      if (ws_c->fd != -1 && FD_ISSET(ws_c->fd, &read_sockets)) {
+        handle_websocket_client(ws_c, clients, websocket_clients, server_buf);
         ws_c->fd = -1;
       }
     }
