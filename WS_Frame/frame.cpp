@@ -80,16 +80,15 @@ void WS_Frame::parse_payload(uint8_t *data, int data_buf_size) {
     }
   } else {
     int payload_start = this->mask_key_start + 4;
-    int payload_size = data_buf_size - payload_start;
-    uint8_t encoded_payload[payload_size];
-    uint8_t decoded_payload[payload_size];
-    for (int i = 0; i < payload_size; i++) {
+    uint8_t encoded_payload[payload_length];
+    uint8_t decoded_payload[payload_length];
+    for (int i = 0; i < this->payload_length; i++) {
       encoded_payload[i] = *(data + payload_start + i);
     }
-    for (int i = 0; i < payload_size; i++) {
+    for (int i = 0; i < payload_length; i++) {
       decoded_payload[i] = encoded_payload[i] ^ this->masking_key[i % 4];
     }
-    for (int i = 0; i < payload_size; i++) {
+    for (int i = 0; i < payload_length; i++) {
       this->payload_data.push_back(decoded_payload[i]);
     }
   }

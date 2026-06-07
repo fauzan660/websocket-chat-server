@@ -23,7 +23,7 @@ using namespace std;
 #define MAGIC_WEBSOCKET_UUID_STRING "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 #define WS_ENDPOINT "/websocket"
 #define MAX_WS_CLIENTS 10
-#define WS_BUF_SIZE 4096
+#define WS_BUF_SIZE 20
 
 uint8_t ws_buf[WS_BUF_SIZE];
 
@@ -113,7 +113,12 @@ string generate_websocket_response_key(string websocket_request_key) {
   string magic_string_concat =
       websocket_request_key + MAGIC_WEBSOCKET_UUID_STRING;
   string hashed_string = encode_key_openssl(magic_string_concat);
+  if (hashed_string.empty())
+    return "";
   string encoded_string = encode_key_base64(hashed_string);
+  if (encoded_string.empty())
+    return "";
+
   return encoded_string;
 }
 bool check_request_ws(string method, string target, string http_version,
@@ -146,22 +151,11 @@ bool check_request_ws(string method, string target, string http_version,
     printf("check ws request: ws key not present in headers \n");
     return false;
   }
+  printf("All keys present in WS request switching protocols \n");
   return true;
 }
 int handle_request_ws(Client *c, map<string, string> headers_map,
                       Client websocket_clients[], Client clients[]) {
-  for (int i = 0; i < MAX_WS_CLIENTS; i++) {
-    if (websocket_clients[i].fd == -1) {
-      websocket_clients[i].fd = c->fd;
-      for (int j = 0; j < MAX_CLIENTS; j++) {
-        if (clients[j].fd == c->fd) {
-          clients[j].fd = -1;
-          break;
-        }
-      }
-      break;
-    }
-  }
 
   string ws_response = "HTTP/1.1 101 Switching Protocols\r\n"
                        "Upgrade: websocket\r\n"
@@ -169,12 +163,32 @@ int handle_request_ws(Client *c, map<string, string> headers_map,
   auto key = headers_map.find("sec-websocket-key");
   if (key != headers_map.end()) {
     string ws_response_key = generate_websocket_response_key(key->second);
-    ws_response += "Sec-WebSocket-Accept: " + ws_response_key +
-                   "\r\n"
-                   "\r\n";
+    if (ws_response_key.empty()) {
+      printf("error generating ws accept key \n");
+      return -1;
+    }
+    ws_response += "Sec-WebSocket-Accept: " + ws_response_key + "\r\n\r\n";
     printf("server generate ws response: \n%s \n", ws_response.c_str());
     int send_status =
         ::send(c->fd, ws_response.c_str(), strlen(ws_response.c_str()), 0);
+    printf("handshake response length: %zu\n", strlen(ws_response.c_str()));
+
+    printf("client %d handshake send status: %d\n", c->fd, send_status);
+    if (send_status < 0) {
+      perror("send");
+    }
+    for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+      if (websocket_clients[i].fd == -1) {
+        websocket_clients[i].fd = c->fd;
+        for (int j = 0; j < MAX_CLIENTS; j++) {
+          if (clients[j].fd == c->fd) {
+            clients[j].fd = -1;
+            break;
+          }
+        }
+        break;
+      }
+    }
     return send_status;
   } else {
     perror("ws key not found in headers \n");
@@ -252,6 +266,7 @@ void handle_client(Client *c, char server_buf[], char response_buf[],
                client_fd);
       } else {
         perror("request handling failed");
+        ::send(c->fd, error_buf, strlen(error_buf), 0);
       }
     } else {
       printf("not a valid ws request \n");
@@ -265,9 +280,25 @@ void handle_client(Client *c, char server_buf[], char response_buf[],
 }
 
 void handle_websocket_client(Client *ws_c, Client clients[],
-                             Client websocket_clients[], char server_buf[]) {
-  int recv_status = ::recv(ws_c->fd, server_buf, BUF_SIZE - 1, 0);
+                             Client websocket_clients[]) {
+  printf("Handling connections with websocket \n");
+  int recv_status = ::recv(ws_c->fd, ws_buf, BUF_SIZE - 1, 0);
+  if (recv_status == 0) {
+    perror("recv failed -- timeout --");
+    close_socket(ws_c);
+    return;
+  }
+  if (recv_status < 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK)
+      return;
+    perror("recv failed -- connection closed --");
+    close_socket(ws_c);
+    return;
+  }
   WS_Frame frame = WS_Frame();
+  frame.parse(ws_buf, sizeof(ws_buf));
+  printf("%.*s\n", (int)frame.get_payload_data().size(),
+         frame.get_payload_data().data());
 }
 
 int main() {
@@ -333,7 +364,7 @@ int main() {
     for (int i = 0; i < MAX_WS_CLIENTS; i++) {
       Client *ws_c = &websocket_clients[i];
       if (ws_c->fd != -1 && FD_ISSET(ws_c->fd, &read_sockets)) {
-        handle_websocket_client(ws_c, clients, websocket_clients, server_buf);
+        handle_websocket_client(ws_c, clients, websocket_clients);
         ws_c->fd = -1;
       }
     }
