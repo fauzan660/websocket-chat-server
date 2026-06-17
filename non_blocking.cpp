@@ -1,3 +1,4 @@
+#include "WS_Frame/frame-send.h"
 #include "WS_Frame/frame.h"
 #include <cerrno>
 #include <cstdint>
@@ -15,7 +16,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <unistd.h>
+#include <vector>
 using namespace std;
 #define MAX_CONNECTIONS 5
 #define MAX_CLIENTS 20
@@ -26,6 +29,12 @@ using namespace std;
 #define WS_BUF_SIZE 20
 
 uint8_t ws_buf[WS_BUF_SIZE];
+char http_buffer[] = "HTTP/1.1 200 OK\r\n"
+                     "Content-Type: text/html; charset=utf-8\r\n"
+                     "Content-Length: 140\r\n"
+                     "\r\n"
+                     "<title>Http Endpoint</title>"
+                     "<h2>you have hit the http endpoint</h2>";
 
 typedef struct {
   int fd;
@@ -269,8 +278,8 @@ void handle_client(Client *c, char server_buf[], char response_buf[],
         ::send(c->fd, error_buf, strlen(error_buf), 0);
       }
     } else {
-      printf("not a valid ws request \n");
-      ::send(c->fd, error_buf, strlen(error_buf), 0);
+      printf("server got http request \n");
+      ::send(c->fd, http_buffer, strlen(http_buffer), 0);
       close(c->fd);
     }
   } else {
@@ -282,13 +291,14 @@ void handle_client(Client *c, char server_buf[], char response_buf[],
 void handle_websocket_client(Client *ws_c, Client clients[],
                              Client websocket_clients[]) {
   printf("Handling connections with websocket \n");
-  int recv_status = ::recv(ws_c->fd, ws_buf, BUF_SIZE - 1, 0);
-  if (recv_status == 0) {
+  // Get raw websocket frame(no headers or body now)
+  int ws_recv_status = ::recv(ws_c->fd, ws_buf, BUF_SIZE - 1, 0);
+  if (ws_recv_status == 0) {
     perror("recv failed -- timeout --");
     close_socket(ws_c);
     return;
   }
-  if (recv_status < 0) {
+  if (ws_recv_status < 0) {
     if (errno == EAGAIN || errno == EWOULDBLOCK)
       return;
     perror("recv failed -- connection closed --");
@@ -297,8 +307,32 @@ void handle_websocket_client(Client *ws_c, Client clients[],
   }
   WS_Frame frame = WS_Frame();
   frame.parse(ws_buf, sizeof(ws_buf));
+  // print decoded frame data
   printf("%.*s\n", (int)frame.get_payload_data().size(),
          frame.get_payload_data().data());
+
+  WS_Frame_Client frame_client = WS_Frame_Client();
+  char client_str[] =
+      "<h1>Hello from server</h1><p>WebSocket connection works</p>";
+  frame_client.parse_response(client_str);
+  vector<uint8_t> bytes_response = frame_client.parse_bytes();
+  // send textual response parsed to a frame
+  int ws_send_status =
+      ::send(ws_c->fd, bytes_response.data(), bytes_response.size(), 0);
+
+  if (ws_send_status == 0) {
+    perror("send failed -- timeout --");
+    close_socket(ws_c);
+    return;
+  }
+  if (ws_send_status < 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK)
+      return;
+    perror("send failed -- connection closed --");
+    close_socket(ws_c);
+    return;
+  }
+  printf("successfully sent data to ws %d. \n", ws_c->fd);
 }
 
 int main() {
@@ -310,16 +344,22 @@ int main() {
   Client clients[MAX_CLIENTS];
   Client websocket_clients[MAX_WS_CLIENTS];
   char server_buf[BUF_SIZE];
-  char response_buf[] = "HTTP/1.1 200 OK\r\n"
-                        "Content-Type: text/html; charset=utf-8\r\n"
-                        "\r\n"
-                        "<HTML><HEAD>"
-                        "<meta http-equiv=\"content-type\" "
-                        "content=\"text/html;charset=utf-8\">\r\n"
-                        "<TITLE>200 OK</TITLE></HEAD><BODY>\r\n"
-                        "<H1>200 OK</H1>\r\n"
-                        "Welcome to the default.\r\n"
-                        "</BODY></HTML>\r\n";
+  const char *body =
+      "<HTML><HEAD>"
+      "<meta http-equiv=\"content-type\" content=\"text/html;charset=utf-8\">"
+      "<TITLE>200 OK</TITLE></HEAD><BODY>"
+      "<H1>200 OK</H1>"
+      "Welcome to the default."
+      "</BODY></HTML>";
+
+  char response_buf[1024];
+  snprintf(response_buf, sizeof(response_buf),
+           "HTTP/1.1 200 OK\r\n"
+           "Content-Type: text/html; charset=utf-8\r\n"
+           "Content-Length: %zu\r\n"
+           "\r\n"
+           "%s",
+           strlen(body), body);
   char ws_handshake_error_buf[] = "HTTP/1.1 400 Bad Request";
 
   if (setup_server_socket(s, address, PORT))

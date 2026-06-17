@@ -7,3 +7,6 @@ exampleSocket.addEventListener("open", (event) => {
 
   exampleSocket.send("foo");
 });
+exampleSocket.onmessage = (event) => {
+  console.log(event.data);
+};
