@@ -20,4 +20,5 @@ public:
   Room(int room_id, string title, int creator_id);
   void add_content(string code_snippet, string error_message, string language,
                    string context);
+  void save_room(sqlite3 *db);
 };

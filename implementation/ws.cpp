@@ -112,10 +112,13 @@ Action get_client_action(json json_object) {
     return Action::CREATE_USER;
   if (data == "CREATE_ROOM")
     return Action::CREATE_ROOM;
-  if (data == "VIEW_ROOM")
-    return Action::VIEW_ROOM;
+  if (data == "VIEW_ROOM_SUGGESTIONS")
+    return Action::VIEW_ROOM_SUGGESTIONS;
   if (data == "ADD_SUGGESTION")
     return Action::ADD_SUGGESTION;
+  if (data == "ACCEPT_SUGGESTION")
+    return Action::ACCEPT_SUGGESTION;
+
   return Action::UNKNOWN;
 }
 
