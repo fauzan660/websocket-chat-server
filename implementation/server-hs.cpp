@@ -1,5 +1,6 @@
 #include "headers/server-hs.h"
 #include <arpa/inet.h> // inet_pton
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <string>
 #include <sys/socket.h>
@@ -21,6 +22,10 @@ int connect_to_target(string target) {
 
   if (connect(fd, (sockaddr *)&addr, sizeof(addr)) < 0) {
     perror("connect to target failed -- is server running?");
+    return -1;
+  }
+  if (fcntl(fd, F_SETFL, O_NONBLOCK) < 0) {
+    perror("fcntl server connection");
     return -1;
   }
 

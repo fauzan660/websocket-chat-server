@@ -11,3 +11,7 @@ struct ProxySession {
   int server_fd; // client A's dedicated server connection
 };
 ProxyConfig parse_args(int argc, char *argv[]);
+
+void log_frame(uint8_t *buf, int size, const string &direction);
+
+void close_session(ProxySession *sess);
