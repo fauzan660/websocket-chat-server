@@ -1,30 +1,18 @@
 #include "headers/common.h"
 #include "headers/http.h"
 #include "headers/ws.h"
+#include "proxy.h"
 #include <algorithm>
 #include <cstdio>
 #include <fcntl.h>
 #include <iostream>
 #include <netinet/in.h>
 #include <sys/socket.h>
+
 using namespace std;
 const char *body = "<HTML><HEAD><TITLE>200 OK</TITLE></HEAD><BODY><H1>200 "
                    "OK</H1>Welcome.</BODY></HTML>";
-struct ProxyConfig {
-  string target;
-  int port;
-};
 
-ProxyConfig parse_args(int argc, char *argv[]) {
-  ProxyConfig cfg;
-  for (int i = 1; i < argc; i++) {
-    if (string(argv[i]) == "--target")
-      cfg.target = argv[++i];
-    if (string(argv[i]) == "--port")
-      cfg.port = stoi(argv[++i]);
-  }
-  return cfg;
-}
 void close_socket(Client *c) {
   ::close(c->fd);
   c->fd = -1;
@@ -74,18 +62,15 @@ void accept_clients(int s, Client clients[], fd_set &read_sockets,
   }
 }
 
-int main() {
+int main(int argc, char *argv[]) {
   int s;
   const int PORT = 8081;
   struct sockaddr_in address;
   fd_set write_sockets, read_sockets;
   struct timeval waitd;
   Client clients[MAX_CLIENTS];
-  Client websocket_clients[MAX_WS_CLIENTS];
+  ProxySession sessions[MAX_CLIENTS];
   char server_buf[BUF_SIZE];
-  FD_ZERO(&write_sockets);
-  FD_ZERO(&read_sockets);
-  FD_SET(s, &read_sockets);
   int address_len = sizeof(address);
   char response_buf[1024];
   snprintf(response_buf, sizeof(response_buf),
@@ -94,13 +79,21 @@ int main() {
            strlen(body), body);
   char ws_handshake_error_buf[] = "HTTP/1.1 400 Bad Request";
 
+  FD_ZERO(&write_sockets);
+  FD_ZERO(&read_sockets);
+  FD_SET(s, &read_sockets);
+
+  // client and server fd's
+  ProxyConfig cfg = parse_args(argc, argv);
+  const int TARGET_PORT = cfg.port;
+
   setup_server_socket(s, address, PORT);
   printf("Server listening on port %d\n", PORT);
 
   for (int i = 0; i < MAX_CLIENTS; i++)
     clients[i].fd = -1;
-  for (int i = 0; i < MAX_WS_CLIENTS; i++)
-    websocket_clients[i].fd = -1;
+  for (int i = 0; i < MAX_CLIENTS; i++)
+    sessions[i].client_fd = sessions[i].server_fd = -1;
 
   while (true) {
     waitd.tv_sec = 10;
@@ -108,16 +101,18 @@ int main() {
     int max_fd = s;
     FD_ZERO(&read_sockets);
     FD_SET(s, &read_sockets);
+
     for (int i = 0; i < MAX_CLIENTS; i++) {
       if (clients[i].fd != -1) {
         FD_SET(clients[i].fd, &read_sockets);
         max_fd = max(max_fd, clients[i].fd);
       }
     }
-    for (int i = 0; i < MAX_WS_CLIENTS; i++) {
-      if (websocket_clients[i].fd != -1) {
-        FD_SET(websocket_clients[i].fd, &read_sockets);
-        max_fd = max(max_fd, websocket_clients[i].fd);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+      if (sessions[i].client_fd != -1) {
+        FD_SET(sessions[i].client_fd, &read_sockets);
+        FD_SET(sessions[i].server_fd, &read_sockets);
+        max_fd = max(max_fd, max(sessions[i].client_fd, sessions[i].server_fd));
       }
     }
 
@@ -128,19 +123,53 @@ int main() {
     if (FD_ISSET(s, &read_sockets))
       accept_clients(s, clients, read_sockets, address, address_len);
 
-    for (int i = 0; i < MAX_WS_CLIENTS; i++) {
-      Client *ws_c = &websocket_clients[i];
-      if (ws_c->fd != -1 && FD_ISSET(ws_c->fd, &read_sockets))
-        handle_websocket_client(ws_c, clients, websocket_clients);
-    }
-
     for (int i = 0; i < MAX_CLIENTS; i++) {
       Client *c = &clients[i];
       if (c->fd == -1 || c->fd == s)
         continue;
-      if (FD_ISSET(c->fd, &read_sockets))
-        handle_client(c, server_buf, response_buf, ws_handshake_error_buf,
-                      read_sockets, websocket_clients, clients);
+      if (FD_ISSET(c->fd, &read_sockets)) {
+        int server_fd =
+            handle_client(c, server_buf, response_buf, ws_handshake_error_buf,
+                          read_sockets, clients, cfg.target);
+        if (server_fd > 0) {
+          // handshake done, move to session
+          for (int j = 0; j < MAX_CLIENTS; j++) {
+            if (sessions[j].client_fd == -1) {
+              sessions[j].client_fd = c->fd;
+              sessions[j].server_fd = server_fd;
+              break;
+            }
+          }
+          c->fd = -1; // remove from HTTP clients
+        }
+      }
+    }
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+      ProxySession *sess = &sessions[i];
+      if (sess->client_fd == -1)
+        continue;
+
+      uint8_t buf[4096];
+
+      if (FD_ISSET(sess->client_fd, &read_sockets)) {
+        int n = recv(sess->client_fd, buf, sizeof(buf), 0);
+        if (n <= 0) {
+          close_session(sess);
+          continue;
+        }
+        log_frame(buf, n, "CLIENT → SERVER");
+        send(sess->server_fd, buf, n, 0);
+      }
+
+      if (FD_ISSET(sess->server_fd, &read_sockets)) {
+        int n = recv(sess->server_fd, buf, sizeof(buf), 0);
+        if (n <= 0) {
+          close_session(sess);
+          continue;
+        }
+        log_frame(buf, n, "SERVER → CLIENT");
+        send(sess->client_fd, buf, n, 0);
+      }
     }
   }
   return 0;

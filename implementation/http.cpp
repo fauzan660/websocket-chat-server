@@ -1,5 +1,6 @@
 #include "../headers/http.h"
 #include "../headers/ws.h"
+#include "headers/server-hs.h"
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -65,9 +66,10 @@ string read_http_message(Client *c, char server_buf[]) {
   return message;
 }
 
-void handle_client(Client *c, char server_buf[], char response_buf[],
-                   char error_buf[], fd_set &read_sockets,
-                   Client websocket_clients[], Client clients[]) {
+int handle_client(Client *c, char server_buf[], char response_buf[],
+                  char error_buf[], fd_set &read_sockets,
+                  Client websocket_clients[], Client clients[],
+                  string server_target) {
   char body[] = "<title>WS Endpoint</title>"
                 "<h2>you have hit the ws endpoint with an http request</h2>";
   char http_buffer[1024];
@@ -80,8 +82,9 @@ void handle_client(Client *c, char server_buf[], char response_buf[],
 
   cout << "-------Handling client connections-------" << endl;
   string message = read_http_message(c, server_buf);
-  if (c->fd == -1 || message.empty())
-    return;
+  if (c->fd == -1 || message.empty()) {
+    printf("HTTP meesage is empty \n");
+  }
   cout << "Received message:\n" << message << endl;
   parse_request(message, method, target, http_version, headers_map);
 
@@ -91,11 +94,15 @@ void handle_client(Client *c, char server_buf[], char response_buf[],
       perror("request handling failed");
       ::send(c->fd, error_buf, strlen(error_buf), 0);
     } else {
+      int server_fd = connect_to_target(server_target);
       printf("client %d request handled successfully \n", c->fd);
+
+      return server_fd;
     }
   } else {
     printf("request at ws endpoint is not a websocket request \n");
     ::send(c->fd, http_buffer, strlen(http_buffer), 0);
     close(c->fd);
   }
+  return -1;
 }
