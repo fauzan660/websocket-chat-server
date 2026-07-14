@@ -67,8 +67,7 @@ string read_http_message(Client *c, char server_buf[]) {
 }
 
 int handle_client(Client *c, char server_buf[], char response_buf[],
-                  char error_buf[], fd_set &read_sockets,
-                  Client websocket_clients[], Client clients[],
+                  char error_buf[], fd_set &read_sockets, Client clients[],
                   string server_target) {
   char body[] = "<title>WS Endpoint</title>"
                 "<h2>you have hit the ws endpoint with an http request</h2>";
@@ -89,7 +88,7 @@ int handle_client(Client *c, char server_buf[], char response_buf[],
   parse_request(message, method, target, http_version, headers_map);
 
   if (check_request_ws(method, target, http_version, headers_map)) {
-    int status = handle_request_ws(c, headers_map, websocket_clients, clients);
+    int status = handle_request_ws(c, headers_map, clients);
     if (status <= 0) {
       perror("request handling failed");
       ::send(c->fd, error_buf, strlen(error_buf), 0);

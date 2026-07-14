@@ -35,7 +35,8 @@ bool check_request_ws(string method, string target, string http_version,
 }
 
 int handle_request_ws(Client *c, map<string, string> headers_map,
-                      Client websocket_clients[], Client clients[]) {
+                      Client clients[]) {
+
   auto key = headers_map.find("sec-websocket-key");
   if (key == headers_map.end())
     return -1;
@@ -56,15 +57,9 @@ int handle_request_ws(Client *c, map<string, string> headers_map,
     return -1;
   }
 
-  for (int i = 0; i < MAX_WS_CLIENTS; i++) {
-    if (websocket_clients[i].fd == -1) {
-      websocket_clients[i].fd = c->fd;
-      for (int j = 0; j < MAX_CLIENTS; j++) {
-        if (clients[j].fd == c->fd) {
-          clients[j].fd = -1;
-          break;
-        }
-      }
+  for (int j = 0; j < MAX_CLIENTS; j++) {
+    if (clients[j].fd == c->fd) {
+      clients[j].fd = -1;
       break;
     }
   }
