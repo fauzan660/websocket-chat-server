@@ -97,13 +97,6 @@ int handle_client(Client *c, char server_buf[], char response_buf[],
     } else {
       int server_fd = connect_to_target(server_target);
       printf("client %d request handled successfully \n", c->fd);
-      for (int j = 0; j < MAX_CLIENTS; j++) {
-        if (clients[j].fd == c->fd) {
-          clients[j].fd = -1;
-          break;
-        }
-      }
-
       return server_fd;
     }
   } else {

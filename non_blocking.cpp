@@ -131,6 +131,7 @@ int main(int argc, char *argv[]) {
         int server_fd =
             handle_client(c, server_buf, response_buf, ws_handshake_error_buf,
                           read_sockets, clients, cfg.target);
+        printf("handle_client returned server_fd: %d\n", server_fd);
         if (server_fd > 0) {
           // handshake done, move to session
           for (int j = 0; j < MAX_CLIENTS; j++) {
@@ -149,19 +150,29 @@ int main(int argc, char *argv[]) {
       if (sess->client_fd == -1)
         continue;
 
+      printf("checking session %d client:%d server:%d\n", i, sess->client_fd,
+             sess->server_fd); // add this
+
       uint8_t buf[4096];
 
       if (FD_ISSET(sess->client_fd, &read_sockets)) {
+        printf("data from client\n"); // add this
+
         int n = recv(sess->client_fd, buf, sizeof(buf), 0);
-        if (n <= 0) {
+        printf("recv from client n: %d errno: %d\n", n, errno);
+        if (n < 0) {
+          if (errno == EAGAIN || errno == EWOULDBLOCK)
+            continue; // no data yet, try next iteration
           close_session(sess);
           continue;
         }
         log_frame(buf, n, "CLIENT → SERVER");
-        send(sess->server_fd, buf, n, 0);
+        int sent = send(sess->server_fd, buf, n, 0);
+        printf("forwarded to server: %d bytes, errno: %d\n", sent, errno);
       }
 
       if (FD_ISSET(sess->server_fd, &read_sockets)) {
+        printf("data from server\n"); // add this
         int n = recv(sess->server_fd, buf, sizeof(buf), 0);
         if (n <= 0) {
           close_session(sess);
