@@ -50,7 +50,6 @@ int handle_request_ws(Client *c, map<string, string> headers_map,
     perror("send");
     return -1;
   }
-  printf("send was successful\n");
 
   return send_status;
 }

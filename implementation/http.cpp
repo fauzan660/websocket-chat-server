@@ -96,7 +96,6 @@ int handle_client(Client *c, char server_buf[], char response_buf[],
       ::send(c->fd, error_buf, strlen(error_buf), 0);
     } else {
       int server_fd = connect_to_target(server_target);
-      printf("client %d request handled successfully \n", c->fd);
       return server_fd;
     }
   } else {

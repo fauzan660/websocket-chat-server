@@ -61,7 +61,6 @@ void WS_Frame::parse_payload_length(uint8_t *data) {
 
 void WS_Frame::maybe_parse_masking_key(uint8_t *data) {
   if (!this->mask) {
-    printf("check ws frame: mask flag is set to 0 \n");
     return;
   }
   for (int i = 0; i < 4; i++) {
@@ -70,11 +69,9 @@ void WS_Frame::maybe_parse_masking_key(uint8_t *data) {
 }
 void WS_Frame::parse_payload(uint8_t *data, int data_buf_size) {
   if (this->payload_length == 0) {
-    printf("check ws frame: payload length is 0 \n");
     return;
   }
   if (this->mask == 0) {
-    printf("check ws frame: mask flag set to 0");
     for (int i = mask_key_start; i < data_buf_size; i++) {
       this->payload_data.push_back(*(data + i));
     }
