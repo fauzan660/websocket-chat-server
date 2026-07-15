@@ -1,6 +1,6 @@
 # ws-logger
 
-A tiny(0.19mb) binary that sits between your websocket server and client logging data packets passing through
+A tiny(0.19mb) binary in pure c++ that sits between your websocket server and client logging data packets passing through
 No dependancies needed to run it. Just build and enjoy :)
 
 ## build
@@ -17,8 +17,12 @@ cmake --build build
 ```bash
 ./wslog --target ws://localhost:8080 --port 9001
 ```
+- `--target` = host:port where your server is running
+- `--port` = port you want the proxy to run on, point your client here instead of where your server is running
 
-point your client at `9001` instead of `8080`, one line change, client and server won't know it's there
+### Flow
+client -> proxy -> server
+- no need for client to server direct connection proxy handles that
 
 ## output
 
