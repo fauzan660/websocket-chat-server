@@ -20,7 +20,7 @@ cmake --build build
 - `--target` = host:port where your server is running
 - `--port` = port you want the proxy to run on, point your client here instead of where your server is running
 
-## Flow
+## flow
 client -> proxy -> server
 - no need for client to server direct connection proxy handles that
 
