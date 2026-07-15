@@ -1,6 +1,7 @@
 # wslog
 
 A tiny(0.19mb) binary that sits between your websocket server and client logging data packets passing through
+No dependancies needed to run it. Just build and enjoy :)
 
 ## build
 
